@@ -14,7 +14,7 @@
         "format": "prettier --write \"src/**/*.ts\"",
         "lint": "eslint --ext .ts --fix src && yarn format",
         "lint-staged": "lint-staged",
-        "start": "nest start",
+        "start": "nest start ENV=development",
         "start:dev": "nest start --watch",
         "start:debug": "nest start --debug --watch",
         "start:prod": "node dist/main",

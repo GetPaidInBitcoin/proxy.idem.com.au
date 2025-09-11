@@ -9,6 +9,17 @@ export const databaseProviders = [
     {
         provide: "DATA_SOURCE",
         useFactory: async () => {
+
+            // Read ca.cert file if exists off disk
+            let caCert = null;
+            if (process.env.CA_CERT) {
+                try {
+                    caCert = fs.readFileSync(process.env.CA_CERT).toString();
+                } catch (error) {
+                    console.error(`Error reading CA certificate: ${error.message}`);
+                }
+            }
+
             const dataSource = new DataSource({
                 type: "postgres",
                 host: process.env.POSTGRES_HOST,
@@ -20,9 +31,9 @@ export const databaseProviders = [
                 entities: [Partner, Request, Setting, User],
                 ssl: process.env.CA_CERT
                     ? {
-                          rejectUnauthorized: true,
-                          ca: fs.readFileSync(process.env.CA_CERT).toString()
-                      }
+                        rejectUnauthorized: true,
+                        ca: caCert
+                    }
                     : false
             });
 
