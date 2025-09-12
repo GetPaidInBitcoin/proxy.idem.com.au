@@ -19,10 +19,10 @@ export class MailJetService implements IEmailService {
     private readonly logger = new Logger("MailJetService");
 
     constructor(private config: ConfigService) {
-        this.emailClient = mailJet.apiConnect(
-            this.config.get(ConfigSettings.MAILJET_API_KEY),
-            this.config.get(ConfigSettings.MAILJET_SECRET)
-        );
+        // this.emailClient = mailJet.apiConnect(
+        //     this.config.get(ConfigSettings.MAILJET_API_KEY),
+        //     this.config.get(ConfigSettings.MAILJET_SECRET)
+        // );
     }
 
     public sendEmailVerification = async (
