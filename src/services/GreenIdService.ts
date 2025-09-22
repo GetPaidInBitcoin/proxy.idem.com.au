@@ -138,7 +138,7 @@ export class GreenIdService implements IKYCService {
 
         if (
             result.return.verificationResult.overallVerificationStatus ===
-                "VERIFIED" ||
+            "VERIFIED" ||
             this.isTest
         ) {
             const signedNameCredential =
@@ -180,6 +180,10 @@ export class GreenIdService implements IKYCService {
     private async formatReturnData(
         data: VerifyReturnData
     ): Promise<KycResponse> {
+
+        const pgpSign = false;
+        let signature = "";
+
         const credentials = data.didPGPCredentials[0];
 
         const claimPayload = {
@@ -204,14 +208,18 @@ export class GreenIdService implements IKYCService {
             JSON.stringify(claimPayload)
         );
 
-        return {
-            result: KycResult.Completed,
-            thirdPartyVerified: false,
+        if (pgpSign) {
             signature: await signMessage(
                 hashedPayload,
                 this.config,
                 this.logger
-            ),
+            );
+        }
+
+        return {
+            result: KycResult.Completed,
+            thirdPartyVerified: false,
+            signature: signature,
             message: claimPayload,
             hashedPayload: hashedPayload,
             JWTs: data.didJWTCredentials.map((jwt, index) => ({
