@@ -122,15 +122,6 @@ start_services() {
 # Function to deploy application
 deploy_app() {
     log_info "Deploying to target: $GIT_TARGET"
-
-    # Check pwd is SERVICE_DIR
-    if [ "$(pwd)" != "$SERVICE_DIR" ]; then
-        log_info "Changing to service directory: $SERVICE_DIR"
-        cd "$SERVICE_DIR" || {
-            log_error "Failed to change to directory: $SERVICE_DIR"
-            exit 1
-        }
-    fi
     
     # Get current branch for backup
     CURRENT_BRANCH=$(git branch --show-current)
