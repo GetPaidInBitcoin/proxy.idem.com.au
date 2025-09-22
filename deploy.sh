@@ -9,10 +9,10 @@
 GIT_TARGET=main
 
 sudo service nginx stop
-pm2 stop api
+pm2 stop id
 cd ~/proxy.idem.com.au
 git stash && git checkout $GIT_TARGET && git pull origin $GIT_TARGET
 rm -r dist
 yarn install && yarn build
-pm2 start api
+pm2 start id
 sudo service nginx start
