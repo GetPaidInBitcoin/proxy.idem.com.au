@@ -38,6 +38,11 @@ export class GreenIdService implements IKYCService {
     private readonly isTest: boolean;
 
     constructor(private config: ConfigService) {
+        console.log(
+            `Initialising GreenIdService ${this.config.get(
+                ConfigSettings.GREENID_URL
+            )}`
+        );
         this.initialiseGreenIdClient(config.get(ConfigSettings.GREENID_URL));
         this.greenIdAccountId = this.config.get(
             ConfigSettings.GREENID_ACCOUNT_ID
@@ -89,6 +94,15 @@ export class GreenIdService implements IKYCService {
     }
 
     private async _verify(dto: VerifyDTO): Promise<VerifyReturnData> {
+        // const mock: VerifyReturnData = {
+        //     success: true,
+        //     didJWTCredentials: [],
+        //     didPGPCredentials: []
+        // };
+
+        // // return mock
+        // return Promise.resolve(mock);
+
         const { user, licence, medicare } = dto;
         let errorMessage: string;
 
@@ -138,30 +152,60 @@ export class GreenIdService implements IKYCService {
 
         if (
             result.return.verificationResult.overallVerificationStatus ===
-            "VERIFIED" ||
+                "VERIFIED" ||
+            result.return.verificationResult.overallVerificationStatus ===
+                "IN_PROGRESS" ||
             this.isTest
         ) {
-            const signedNameCredential =
-                await this.createJWTVerifiableCredential(
-                    "NameCredential",
-                    user.name
-                );
-            const signedDobCredential =
-                await this.createJWTVerifiableCredential(
-                    "BirthCredential",
-                    user.dob
-                );
+            // const signedNameCredential =
+            //     await this.createJWTVerifiableCredential(
+            //         "NameCredential",
+            //         user.name
+            //     );
 
-            const PGPSignedNameCredential =
-                await this.createPGPVerifiableCredential(
-                    "NameCredential",
-                    user.name
-                );
-            const PGPSignedDobCredential =
-                await this.createPGPVerifiableCredential(
-                    "BirthCredential",
-                    user.dob
-                );
+            // const signedDobCredential =
+            //     await this.createJWTVerifiableCredential(
+            //         "BirthCredential",
+            //         user.dob
+            //     );
+
+            // const PGPSignedNameCredential =
+            //     await this.createPGPVerifiableCredential(
+            //         "NameCredential",
+            //         user.name
+            //     );
+
+            // const PGPSignedDobCredential =
+            //     await this.createPGPVerifiableCredential(
+            //         "BirthCredential",
+            //         user.dob
+            //     );
+
+            const signedNameCredentialPromise =
+                this.createJWTVerifiableCredential("NameCredential", user.name);
+
+            const signedDobCredentialPromise =
+                this.createJWTVerifiableCredential("BirthCredential", user.dob);
+
+            const PGPSignedNameCredentialPromise =
+                this.createPGPVerifiableCredential("NameCredential", user.name);
+
+            const PGPSignedDobCredentialPromise =
+                this.createPGPVerifiableCredential("BirthCredential", user.dob);
+
+            const [
+                signedNameCredential,
+                signedDobCredential,
+                PGPSignedNameCredential,
+                PGPSignedDobCredential
+            ] = await Promise.all([
+                signedNameCredentialPromise,
+                signedDobCredentialPromise,
+                PGPSignedNameCredentialPromise,
+                PGPSignedDobCredentialPromise
+            ]);
+
+            this.logger.log("Credentials created");
 
             // CACHE THIS
             return {

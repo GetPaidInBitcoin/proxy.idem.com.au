@@ -63,14 +63,14 @@ export class UserController {
         status: HttpStatus.BAD_REQUEST
     })
     async verify(
-        @Body() body: VerifyUserRequest,
-        @Headers("x-idem-api-key") apiKey: string,
-        @Ip() ip: string
+        @Body() body: VerifyUserRequest
+        // @Headers("x-idem-api-key") apiKey: string,
+        // @Ip() ip: string
     ): Promise<KycResponse> {
-        const partner = await this.partnerService.getByApiKey(apiKey);
-        if (!partner) {
-            throw new UnauthorizedException("Invalid API key");
-        }
+        // const partner = await this.partnerService.getByApiKey(apiKey);
+        // if (!partner) {
+        //     throw new UnauthorizedException("Invalid API key");
+        // }
 
         // TODO: Check if the user is already verified
 
@@ -81,13 +81,13 @@ export class UserController {
 
         // Add a request to the db
         const request = new Request();
-        request.from = partner.name;
+        request.from = "GPIB";
         request.to = "IDEM";
         request.requestType = "Verify";
-        request.ipAddress = ip;
+        request.ipAddress = "localhost";
 
-        logger.info(`Adding request ${request} to the database`);
-        await this.partnerService.create(request);
+        // logger.info(`Adding request ${request} to the database`);
+        // await this.partnerService.create(request);
 
         // Send the result to the partner
 
