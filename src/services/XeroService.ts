@@ -11,7 +11,7 @@ import {
 } from "../interfaces";
 import { getVendorId } from "../utils/vendor";
 import { AuthToken, ConfigSettings } from "../types/general";
-import { getCache, setCache } from "../clients/cache";
+import { setCache } from "../clients/cache";
 
 const XERO_SCOPES =
     "openid profile email accounting.transactions accounting.contacts offline_access";
@@ -44,7 +44,7 @@ export class XeroService implements IAccountingService, IOauthService {
         // call Xero API to refresh tokens
 
         // add tokens to Redis
-        await setCache<AuthToken>("redis", undefined, 2 * 60 * 60);
+        // await setCache<AuthToken>("redis", undefined, 2 * 60 * 60);
     }
 
     public async sendInvoices(body: SendInvoicesRequestBody): Promise<string> {

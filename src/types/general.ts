@@ -78,9 +78,9 @@ export type UsersResponse = {
 export type KycResponse = {
     result: KycResult;
     thirdPartyVerified: boolean;
-    signature: string; //signed claim response
-    message: ClaimResponsePayload;
-    hashedPayload: string;
+    signature?: string; //signed claim response
+    message?: ClaimResponsePayload;
+    hashedPayload?: string;
     JWTs: JWT[];
 };
 

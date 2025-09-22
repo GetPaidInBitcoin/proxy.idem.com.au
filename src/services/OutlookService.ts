@@ -44,7 +44,7 @@ export class OutlookService implements IEmailService, IOauthService {
         const newToken = result.data as AuthToken;
         console.log(newToken);
 
-        await setCache<AuthToken>("outlook-token", newToken, 2 * 60 * 60);
+        //await setCache<AuthToken>("outlook-token", newToken, 2 * 60 * 60);
     }
 
     public sendEmailVerification = async (

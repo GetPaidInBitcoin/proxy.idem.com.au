@@ -81,16 +81,28 @@ export class GreenIdService implements IKYCService {
             expiry: data.medicareCard.expiry
         };
 
-        const response = await this._verify({
+        const response: VerifyReturnData = await this._verify({
             user: greenIdUser,
             licence: licence,
             medicare: medicare
         });
 
-        const result: KycResponse = await this.formatReturnData(response);
-        this.logger.log(result);
+        try {
+            const result: KycResponse = await this.formatReturnData(response);
+            this.logger.log(result);
 
-        return result;
+            return result;
+        } catch (error) {
+            this.logger.error("Error formatting return data", error);
+
+            const errorResult: KycResponse = {
+                result: KycResult.Completed,
+                thirdPartyVerified: false,
+                signature: "",
+                JWTs: []
+            };
+            return errorResult;
+        }
     }
 
     private async _verify(dto: VerifyDTO): Promise<VerifyReturnData> {
@@ -224,53 +236,121 @@ export class GreenIdService implements IKYCService {
     private async formatReturnData(
         data: VerifyReturnData
     ): Promise<KycResponse> {
+        try {
+            const pgpSign = false;
+            let signature = ethers.constants.HashZero;
 
-        const pgpSign = false;
-        let signature = "";
-
-        const credentials = data.didPGPCredentials[0];
-
-        const claimPayload = {
-            "@context": [
-                "https://www.w3.org/2018/credentials/v1",
-                "https://schema.org"
-            ],
-            type: "VerifiablePresentation",
-            proof: {
-                type: "EcdsaSecp256k1Signature2019",
-                created: new Date(),
-                proofPurpose: "authentication",
-                verificationMethod: `did:idem:${this.config.get(
-                    ConfigSettings.WALLET_ADDRESS
-                )}`,
-                domain: this.config.get(ConfigSettings.IDEM_URL)
-            },
-            verifiableCredential: [credentials]
-        } as unknown as ClaimResponsePayload;
-
-        const hashedPayload = ethers.utils.hashMessage(
-            JSON.stringify(claimPayload)
-        );
-
-        if (pgpSign) {
-            signature: await signMessage(
-                hashedPayload,
-                this.config,
-                this.logger
+            // Get PGP password from config
+            const pgpPassphrase = this.config.get(
+                ConfigSettings.PGP_PASSPHRASE
             );
-        }
 
-        return {
-            result: KycResult.Completed,
-            thirdPartyVerified: false,
-            signature: signature,
-            message: claimPayload,
-            hashedPayload: hashedPayload,
-            JWTs: data.didJWTCredentials.map((jwt, index) => ({
-                claimType: data.didPGPCredentials[index].type[1],
-                jwt
-            }))
-        };
+            this.logger.log(
+                `PGP Passphrase configured: ${pgpPassphrase ? "Yes" : "No"}`
+            );
+
+            // Safely access PGP credentials with fallback
+            const credentials = data.didPGPCredentials?.[0] || null;
+            if (!credentials) {
+                this.logger.warn(
+                    "No PGP credentials found in verification data"
+                );
+            }
+
+            const claimPayload = {
+                "@context": [
+                    "https://www.w3.org/2018/credentials/v1",
+                    "https://schema.org"
+                ],
+                type: "VerifiablePresentation",
+                proof: {
+                    type: "EcdsaSecp256k1Signature2019",
+                    created: new Date(),
+                    proofPurpose: "authentication",
+                    verificationMethod: `did:idem:${this.config.get(
+                        ConfigSettings.WALLET_ADDRESS
+                    )}`,
+                    domain: this.config.get(ConfigSettings.IDEM_URL)
+                },
+                verifiableCredential: credentials ? [credentials] : []
+            } as unknown as ClaimResponsePayload;
+
+            const hashedPayload = ethers.utils.hashMessage(
+                JSON.stringify(claimPayload)
+            );
+
+            if (pgpSign) {
+                try {
+                    signature = await signMessage(
+                        hashedPayload,
+                        this.config,
+                        this.logger
+                    );
+                } catch (signError) {
+                    this.logger.error(
+                        "Failed to sign message with PGP:",
+                        signError
+                    );
+                    signature = "";
+                }
+            }
+
+            // Safely map JWTs with error handling
+            let jwts = [];
+            try {
+                if (data.didJWTCredentials && data.didPGPCredentials) {
+                    jwts = data.didJWTCredentials.map((jwt, index) => ({
+                        claimType:
+                            data.didPGPCredentials[index]?.type?.[1] ||
+                            "Unknown",
+                        jwt
+                    }));
+                }
+            } catch (mappingError) {
+                this.logger.error(
+                    "Failed to map JWT credentials:",
+                    mappingError
+                );
+                jwts = [];
+            }
+
+            return {
+                result: KycResult.Completed,
+                thirdPartyVerified: false,
+                signature: signature,
+                message: claimPayload,
+                hashedPayload: hashedPayload,
+                JWTs: jwts
+            };
+        } catch (error) {
+            this.logger.error("Error in formatReturnData:", error);
+
+            // Return a safe fallback response
+            return {
+                result: KycResult.Completed,
+                thirdPartyVerified: false,
+                signature: "",
+                message: {
+                    "@context": [
+                        "https://www.w3.org/2018/credentials/v1",
+                        "https://schema.org"
+                    ],
+                    type: "VerifiablePresentation",
+                    proof: {
+                        type: "EcdsaSecp256k1Signature2019",
+                        created: new Date(),
+                        proofPurpose: "authentication",
+                        verificationMethod: `did:idem:${this.config.get(
+                            ConfigSettings.WALLET_ADDRESS
+                        )}`,
+                        domain: this.config.get(ConfigSettings.IDEM_URL)
+                    },
+                    verifiableCredential: []
+                } as unknown as ClaimResponsePayload,
+                hashedPayload: "",
+                JWTs: []
+            };
+        }
     }
 
     private async createJWTVerifiableCredential(
@@ -304,9 +384,17 @@ export class GreenIdService implements IKYCService {
             credentialSubject: credentialSubject
         };
 
-        const JWT = await ethrDid.signJWT({ vc: unverifiableCredential });
+        try {
+            const JWT = await ethrDid.signJWT({ vc: unverifiableCredential });
 
-        return JWT;
+            return JWT;
+        } catch (error) {
+            this.logger.error(
+                "Error creating JWT verifiable credential",
+                error
+            );
+            return ethers.constants.HashZero;
+        }
     }
 
     // Create verifiable credential signed with pgp key
@@ -319,6 +407,8 @@ export class GreenIdService implements IKYCService {
             date.valueOf() + 1000 * 60 * 60 * 24 * 365
         );
 
+        let signature = ethers.constants.HashZero;
+
         const UnverifiableCredential: UnverifiableCredential = {
             "@context": ["https://www.w3.org/2018/credentials/v1"],
             type: ["VerifiableCredential", credentialType],
@@ -328,31 +418,45 @@ export class GreenIdService implements IKYCService {
             credentialSubject: credentialSubject
         };
 
-        const privateKey = await getPrivateKey(this.config);
-        const message = await openpgp.createMessage({
-            text: JSON.stringify(UnverifiableCredential)
-        });
-        const detachedSignature = await openpgp.sign({
-            message: message,
-            signingKeys: privateKey,
-            format: "object",
-            detached: true
-        });
-
-        const signature = await openpgp.readSignature({
-            armoredSignature: detachedSignature.armor() // parse detached signature
-        });
-
-        return {
-            ...UnverifiableCredential,
-            proof: {
-                type: "GpgSignature2020",
-                created: new Date().toISOString(),
-                proofPurpose: "assertionMethod",
-                verificationMethod: "",
-                signatureValue: signature.armor()
+        try {
+            const privateKey = await getPrivateKey(this.config);
+            if (!privateKey) {
+                throw new Error("Failed to load PGP private key");
             }
-        };
+            const message = await openpgp.createMessage({
+                text: JSON.stringify(UnverifiableCredential)
+            });
+            const detachedSignature = await openpgp.sign({
+                message: message,
+                signingKeys: privateKey,
+                format: "object",
+                detached: true
+            });
+
+            const pgpSignature = await openpgp.readSignature({
+                armoredSignature: detachedSignature.armor() // parse detached signature
+            });
+
+            signature = pgpSignature.armor();
+
+            this.logger.log("PGP verifiable credential created");
+        } catch (error) {
+            this.logger.error(
+                "Error creating PGP verifiable credential",
+                error
+            );
+        } finally {
+            return {
+                ...UnverifiableCredential,
+                proof: {
+                    type: "GpgSignature2020",
+                    created: new Date().toISOString(),
+                    proofPurpose: "assertionMethod",
+                    verificationMethod: "",
+                    signatureValue: signature
+                }
+            };
+        }
     }
 
     private async initialiseGreenIdClient(baseURL: string): Promise<void> {
