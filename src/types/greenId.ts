@@ -18,6 +18,8 @@ export type GetSourcesResult = {
 
 export type VerifyDTO = {
     user: RegisterVerificationData;
+    // Express DVS consent; drives greenID's *_tandc fields.
+    dvsConsent: boolean;
     licence?: LicenceData;
     medicare?: MedicareData;
 };

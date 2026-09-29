@@ -240,6 +240,15 @@ export class VerifyUserRequest {
     @ApiProperty()
     @IsNotEmpty()
     medicareCard: MedicareDataDto;
+    // Express DVS consent (DVS Access Guidelines 2.51(a)). The GPIB API only
+    // sends true after the customer ticked the model consent statement, or
+    // staff attested it. Declared so ValidationPipe({ whitelist }) keeps it.
+    @ApiProperty({
+        description:
+            "Express DVS consent captured from the individual. Checks are refused unless true."
+    })
+    @IsBoolean()
+    dvsConsent: boolean;
 }
 
 export class ExchangeSignupCallBack {
