@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { IKYCService, VerifyUserRequest } from "../interfaces";
 import soap from "soap";
@@ -55,6 +55,15 @@ export class GreenIdService implements IKYCService {
     }
 
     public async verify(data: VerifyUserRequest): Promise<KycResponse> {
+        // No DVS check without express consent (#1886). Refuse before any
+        // personal data reaches greenID.
+        if (data.dvsConsent !== true) {
+            this.logger.warn("Verification refused: no express DVS consent");
+            throw new BadRequestException(
+                "Express DVS consent is required before an identity check"
+            );
+        }
+
         const greenIdUser: RegisterVerificationData = {
             ruleId: "default",
             name: data.fullName,
@@ -84,7 +93,8 @@ export class GreenIdService implements IKYCService {
         const response: VerifyReturnData = await this._verify({
             user: greenIdUser,
             licence: licence,
-            medicare: medicare
+            medicare: medicare,
+            dvsConsent: data.dvsConsent
         });
 
         try {
@@ -115,8 +125,14 @@ export class GreenIdService implements IKYCService {
         // // return mock
         // return Promise.resolve(mock);
 
-        const { user, licence, medicare } = dto;
+        const { user, licence, medicare, dvsConsent } = dto;
         let errorMessage: string;
+
+        if (dvsConsent !== true) {
+            throw new BadRequestException(
+                "Express DVS consent is required before an identity check"
+            );
+        }
 
         if (!user.name) errorMessage = "User doesn't have name";
         if (!user.dob) errorMessage = "User doesn't have a date of birth";
@@ -141,7 +157,7 @@ export class GreenIdService implements IKYCService {
             verificationId,
             sourceId: `${licence.state.toLowerCase()}regodvs`,
             inputFields: {
-                input: this.getDriversLicenseeInputs(licence)
+                input: this.getDriversLicenseeInputs(licence, dvsConsent)
             }
         });
         this.logger.log("Licence result complete");
@@ -152,7 +168,7 @@ export class GreenIdService implements IKYCService {
                 verificationId,
                 sourceId: `medicaredvs`,
                 inputFields: {
-                    input: this.getMedicareInputs(medicare)
+                    input: this.getMedicareInputs(medicare, dvsConsent)
                 }
             });
         }
@@ -162,13 +178,19 @@ export class GreenIdService implements IKYCService {
             `Verification result complete status ${result.return.verificationResult.overallVerificationStatus}`
         );
 
-        if (
-            result.return.verificationResult.overallVerificationStatus ===
-                "VERIFIED" ||
-            result.return.verificationResult.overallVerificationStatus ===
-                "IN_PROGRESS" ||
-            this.isTest
-        ) {
+        const overallStatus =
+            result.return.verificationResult.overallVerificationStatus;
+
+        // Only a completed VERIFIED result counts (#1886). IN_PROGRESS means
+        // greenID has not verified the person yet (e.g. pending review in the
+        // greenID admin panel) and must not mark them verified in GPIB.
+        if (overallStatus === "IN_PROGRESS") {
+            this.logger.warn(
+                `Verification ${verificationId} is IN_PROGRESS in greenID; not treated as verified`
+            );
+        }
+
+        if (overallStatus === "VERIFIED" || this.isTest) {
             // const signedNameCredential =
             //     await this.createJWTVerifiableCredential(
             //         "NameCredential",
@@ -564,7 +586,13 @@ export class GreenIdService implements IKYCService {
         });
     }
 
-    private getDriversLicenseeInputs(data: LicenceData) {
+    // greenID reads "on" as the individual having accepted the DVS terms.
+    // Omit the field entirely unless we hold their express consent (#1886).
+    private tandcInput(name: string, dvsConsent: boolean) {
+        return dvsConsent === true ? [{ name, value: "on" }] : [];
+    }
+
+    private getDriversLicenseeInputs(data: LicenceData, dvsConsent: boolean) {
         const state = data.state.toLowerCase();
         const variables = [
             {
@@ -583,10 +611,7 @@ export class GreenIdService implements IKYCService {
                 name: `greenid_${state}regodvs_dob`,
                 value: `${data.dob.day}/${data.dob.month}/${data.dob.year}`
             },
-            {
-                name: `greenid_${state}regodvs_tandc`,
-                value: "on"
-            },
+            ...this.tandcInput(`greenid_${state}regodvs_tandc`, dvsConsent),
             {
                 name: `greenid_${state}regodvs_cardnumber`,
                 value: data.cardNumber
@@ -603,7 +628,7 @@ export class GreenIdService implements IKYCService {
         return variables;
     }
 
-    private getMedicareInputs(data: MedicareData) {
+    private getMedicareInputs(data: MedicareData, dvsConsent: boolean) {
         const variables = [
             {
                 name: `greenid_medicaredvs_cardColour`,
@@ -629,10 +654,7 @@ export class GreenIdService implements IKYCService {
                 name: `greenid_medicaredvs_expiry`,
                 value: data.expiry
             },
-            {
-                name: `greenid_medicaredvs_tandc`,
-                value: "on"
-            }
+            ...this.tandcInput(`greenid_medicaredvs_tandc`, dvsConsent)
         ];
 
         if (data.name2) {
@@ -659,7 +681,7 @@ export class GreenIdService implements IKYCService {
         return variables;
     }
 
-    private getPassportInputs(data: PassportData) {
+    private getPassportInputs(data: PassportData, dvsConsent: boolean) {
         const variables = [
             {
                 name: `greenid_passportdvs_number`,
@@ -677,10 +699,7 @@ export class GreenIdService implements IKYCService {
                 name: `greenid_passportdvs_dob`,
                 value: `${data.dob.day}/${data.dob.month}/${data.dob.year}`
             },
-            {
-                name: `greenid_passportdvs_tandc`,
-                value: "on"
-            }
+            ...this.tandcInput(`greenid_passportdvs_tandc`, dvsConsent)
         ];
 
         if (data.name.middleNames) {
@@ -693,7 +712,7 @@ export class GreenIdService implements IKYCService {
         return variables;
     }
 
-    private getBirthCertificateInputs(data: BirthCertificateData) {
+    private getBirthCertificateInputs(data: BirthCertificateData, dvsConsent: boolean) {
         const variables = [
             {
                 name: `greenid_birthcertificatedvs_registration_number`,
@@ -715,10 +734,7 @@ export class GreenIdService implements IKYCService {
                 name: `greenid_birthcertificatedvs_dob`,
                 value: `${data.dob.day}/${data.dob.month}/${data.dob.year}`
             },
-            {
-                name: `greenid_birthcertificatedvs_tandc`,
-                value: "on"
-            }
+            ...this.tandcInput(`greenid_birthcertificatedvs_tandc`, dvsConsent)
         ];
 
         if (data.registrationYear) {
